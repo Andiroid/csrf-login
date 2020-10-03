@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+
+echo -n "Username: "
+read username
+
+# asterisk password
+unset password
+unset count
+echo -n "Password: "
+stty -echo
+count=0
+while IFS= read -p "$prompt" -r -s -n 1 char
+do
+    # enter
+    if [[ $char == $'\0' ]] ; then
+        break
+    fi
+    # backspace
+    if [[ $char == $'\177' ]] ; then
+        if [ $count -gt 0 ] ; then
+            count=$((count-1))
+            prompt=$'\b \b'
+            password="${password%?}"
+        else
+            prompt=''
+        fi
+    else
+        count=$((count+1))
+        prompt='*'
+        password+="$char"
+    fi
+done
+stty echo
+echo
+
+# echo -n Password: 
+# read -s password
+# echo
+
+login_url=https://moodle.spengergasse.at/login/index.php
+spoof_ip="X-Forwarded-For: 192.189.51.145"
+spoof_agent="User-Agent: Internet-Exploder/5.0"
+
+# prepare files and folders
+> cookies.pid > out.html
+
+# extract csrf token from login page html
+csrf_token=$(wget --save-cookies cookies.pid --header "$spoof_ip" --header "$spoof_agent" --keep-session-cookies --quiet --no-verbose -O - $login_url | sed -n '/token/s/.*name="logintoken"\s\+value="\([^"]\+\).*/\1/p')
+
+# prepare POST payload
+payload="anchor=&logintoken=${csrf_token}&username=${username}&password=${password}&rememberusername=1"
+
+# fetch moodle page html
+wget --header "$spoof_ip" \
+     --header "$spoof_agent" \
+     --output-document=out.html \
+     --load-cookies cookies.pid \
+     --quiet \
+     --no-verbose \
+     --post-data $payload \
+     --delete-after \
+     $login_url
+
+# verify login success via http response
+if grep -q Andreas out.html; then
+    echo -e "\e[38;5;82mLogged in"
+else
+    echo -e "\e[38;5;160mFailure"
+fi
